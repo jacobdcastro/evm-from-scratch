@@ -41,7 +41,7 @@ struct Expect {
 
 
 fn main() {
-    let text = std::fs::read_to_string("../evm.json").unwrap();
+    let text = std::fs::read_to_string("./evm.json").unwrap();
     let data: Vec<Evmtest> = serde_json::from_str(&text).unwrap();
 
     let total = data.len();
