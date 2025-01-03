@@ -195,16 +195,204 @@ pub fn evm(_code: impl AsRef<[u8]>) -> EvmResult {
 
         // SDIV
         if opcode == 0x05 {
-            todo!();
-            // treat a, b as two's complement signed 256-bit integers
-            //let a = stack.remove(1); // denominator
-            //let b = stack.remove(0); // numerator
-            //if a == U256::zero() { 
-            //    stack.insert(0, U256::zero());
-            //} else {
-            //    let result = b / a;
-            //    stack.insert(0, result);
-            //}
+            let denominator = stack.remove(1); 
+            let numerator = stack.remove(0);
+            
+            if denominator == U256::zero() {
+                stack.insert(0, U256::zero());
+            } else {
+                // Check if numerator is -2^255 (minimum value)
+                let min_value = U256::from(1) << 255;
+                let is_numerator_min = numerator == min_value;
+                
+                // Get signs
+                let numerator_negative = (numerator >> 255) == U256::from(1);
+                let denominator_negative = (denominator >> 255) == U256::from(1);
+                
+                // Convert to absolute values
+                let abs_numerator = if numerator_negative { (!numerator).overflowing_add(U256::from(1)).0 } else { numerator };
+                let abs_denominator = if denominator_negative { (!denominator).overflowing_add(U256::from(1)).0 } else { denominator };
+                
+                // Perform division
+                let mut result = abs_numerator / abs_denominator;
+                
+                // Handle special case: -2^255 / -1
+                if is_numerator_min && denominator == U256::MAX {
+                    result = min_value;
+                } else if numerator_negative != denominator_negative {
+                    // Result should be negative
+                    result = (!result).overflowing_add(U256::from(1)).0;
+                }
+                
+                stack.insert(0, result);
+            }
+        }
+
+        // SMOD
+        if opcode == 0x07 {
+            let denominator = stack.remove(1); 
+            let numerator = stack.remove(0);
+
+            if denominator == U256::zero() {
+                stack.insert(0, U256::zero());
+            } else {
+                // Get signs by checking most significant bit
+                let numerator_negative = (numerator >> 255) == U256::from(1);
+                let denominator_negative = (denominator >> 255) == U256::from(1);
+
+                // Convert to absolute values
+                let abs_numerator = if numerator_negative { (!numerator).overflowing_add(U256::from(1)).0 } else { numerator };
+                let abs_denominator = if denominator_negative { (!denominator).overflowing_add(U256::from(1)).0 } else { denominator };
+
+                // Perform modulo on absolute values
+                let mut result = abs_numerator % abs_denominator;
+
+                // If numerator was negative, result should be negative
+                if numerator_negative && result != U256::zero() {
+                    result = (!result).overflowing_add(U256::from(1)).0;
+                }
+
+                stack.insert(0, result);
+            }
+        }
+
+        // LT
+        if opcode == 0x10 {
+            let right_side = stack.remove(1);
+            let left_side = stack.remove(0);
+            stack.insert(0, if left_side < right_side { U256::one() } else { U256::zero() });
+        }
+
+        // GT
+        if opcode == 0x11 {
+            let right_side = stack.remove(1);
+            let left_side = stack.remove(0);
+            stack.insert(0, if left_side > right_side { U256::one() } else { U256::zero() });
+        }
+
+        // SLT 
+        if opcode == 0x12 {
+            let right_side = stack.remove(1);
+            let left_side = stack.remove(0);
+            
+            let left_negative = (left_side >> 255) == U256::from(1);
+            let right_negative = (right_side >> 255) == U256::from(1);
+
+            if left_negative == right_negative { 
+                // handle same sign with absolutes
+                let abs_left = if left_negative { (!left_side).overflowing_add(U256::from(1)).0 } else { left_side };
+                let abs_right = if right_negative { (!right_side).overflowing_add(U256::from(1)).0 } else { right_side };
+
+                let result = if left_negative { abs_right < abs_left } else { abs_left < abs_right };
+
+                stack.insert(0, U256::from(result as u8));
+            } else {
+                // signs are different, convert `left_negative` bool to 1 or 0
+                stack.insert(0, U256::from(left_negative as u8));
+            }
+        }
+
+        // SLT 
+        if opcode == 0x13 {
+            let right_side = stack.remove(1);
+            let left_side = stack.remove(0);
+            
+            let left_negative = (left_side >> 255) == U256::from(1);
+            let right_negative = (right_side >> 255) == U256::from(1);
+
+            if left_negative == right_negative { 
+                // handle same sign with absolutes
+                let abs_left = if left_negative { (!left_side).overflowing_add(U256::from(1)).0 } else { left_side };
+                let abs_right = if right_negative { (!right_side).overflowing_add(U256::from(1)).0 } else { right_side };
+
+                let result = if left_negative { abs_right > abs_left } else { abs_left > abs_right };
+
+                stack.insert(0, U256::from(result as u8));
+            } else {
+                // signs are different, convert `left_negative` bool to 1 or 0
+                stack.insert(0, U256::from(!left_negative as u8));
+            }
+        }
+
+        // EQ 
+        if opcode == 0x14 {
+            let right_side = stack.remove(1);
+            let left_side = stack.remove(0);
+            stack.insert(0, U256::from((right_side == left_side) as u8));
+        }
+
+        // ISZERO 
+        if opcode == 0x15 {
+            let a = stack.remove(0);
+            stack.insert(0, U256::from((a == U256::zero()) as u8));
+        }
+
+        // NOT 
+        if opcode == 0x19 {
+            let a = stack.remove(0);
+            stack.insert(0, !a);
+        }
+
+        // AND 
+        if opcode == 0x16 {
+            let a = stack.remove(1);
+            let b = stack.remove(0);
+            stack.insert(0, b & a);
+        }
+
+        // OR 
+        if opcode == 0x17 {
+            let a = stack.remove(1);
+            let b = stack.remove(0);
+            stack.insert(0, b | a);
+        }
+
+        // XOR
+        if opcode == 0x18 {
+            let a = stack.remove(1);
+            let b = stack.remove(0);
+            stack.insert(0, b ^ a);
+        }
+
+        // SHL 
+        if opcode == 0x1B {
+            let value = stack.remove(1);
+            let shift = stack.remove(0);
+            stack.insert(0, if shift > U256::from(255) { U256::zero() } else { value << shift });
+        }
+        
+        // SHR
+        if opcode == 0x1C {
+            let value = stack.remove(1);
+            let shift = stack.remove(0);
+            stack.insert(0, if shift > U256::from(255) { U256::zero() } else { value >> shift });
+        }
+
+        // SAR
+        if opcode == 0x1D {
+            let value = stack.remove(1);
+            let shift = stack.remove(0);
+
+            // Check if the input value is negative (MSB is 1)
+            let value_negative = (value >> 255) == U256::from(1);
+            
+            if shift > U256::from(255) {
+                // If shift is > 255, result is 0 for positive numbers
+                // or all 1s (-1) for negative numbers
+                stack.insert(0, if value_negative { U256::MAX } else { U256::zero() });
+            } else {
+                let shift = shift.as_u32();
+                let mut result = value >> shift;
+                
+                // For negative numbers, we need to fill the upper bits with 1s
+                if value_negative {
+                    // Create a mask with 1s in the positions we shifted
+                    let mask = (!U256::zero()) << (256 - shift);
+                    result = result | mask;
+                }
+                
+                stack.insert(0, result);
+            }
         }
     }
 
